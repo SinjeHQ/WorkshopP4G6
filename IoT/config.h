@@ -9,14 +9,22 @@
 // --- Wi-Fi du bord ---
 // Laisser WIFI_SSID vide ("") pour faire tourner le sas sans réseau du tout :
 // badges, porte et alarme continuent de fonctionner, rien n'est envoyé.
-#define WIFI_SSID     ""
-#define WIFI_PASSWORD ""
+#define WIFI_SSID     "S25 de Benjamin"
+#define WIFI_PASSWORD "passwords"
 
-// --- Serveur de bord (la VM Debian 12 qui héberge l'API du dashboard) ---
-// Pendant les tests, c'est l'ordinateur qui fait tourner "npm run api".
-// Mettre son adresse IP sur le réseau local, pas "localhost" : pour la carte,
-// "localhost" désignerait la carte elle-même.
-#define SERVEUR_HOTE  "192.168.1.10"
+// --- Serveur de bord (la machine qui fait tourner "npm run api") ---
+//
+// >>> LA SEULE VALEUR QUI RESTE A REMPLIR <<<
+//
+// Connecter le PC au partage de connexion, puis relever son adresse :
+//   Windows : ipconfig        -> ligne "Adresse IPv4"
+//   Mac     : ipconfig getifaddr en0
+//   Linux   : hostname -I
+//
+// Surtout pas "localhost" : pour la carte, "localhost" désignerait la carte
+// elle-même. Attention, cette adresse change a chaque fois qu'on passe d'un
+// reseau a un autre.
+#define SERVEUR_HOTE  "A_REMPLIR"
 #define SERVEUR_PORT  3000
 
 // Les deux adresses utilisées par le dashboard.
