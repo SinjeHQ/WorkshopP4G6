@@ -44,6 +44,17 @@ Quatre équipes du vaisseau ont chacune leur badge :
 
 Une interface web qui permet de suivre en direct ce qui se passe sur le sas : qui est passé, quand, si une alarme a été déclenchée, et si le lien avec la Terre est actif ou coupé.
 
+**Comment il est relié au sas :** la carte n'envoie rien au dashboard directement. À chaque badge, chaque ouverture et chaque alarme, elle dépose une ligne sur l'API du serveur de bord, et le dashboard vient la lire toutes les 3 secondes.
+
+```
+   ESP8266  ──écrit──►   API du serveur de bord   ◄──lit──  Dashboard
+   (le sas)              /evenements  /statut               (React)
+```
+
+Aucun des deux n'attend l'autre. Si le réseau tombe, le sas garde ses événements en mémoire et les renvoie tous, dans l'ordre et avec leur heure d'origine, dès que la liaison revient. Et toutes les 30 secondes la carte fait signe, même quand il ne se passe rien : c'est ce qui permet au dashboard d'afficher « Sas en ligne » ou « Sas injoignable ».
+
+Le réglage tient dans un seul fichier, `IoT/config.h` (Wi-Fi du bord et adresse du serveur). La marche à suivre complète est dans [`IoT/RESEAU.md`](IoT/RESEAU.md).
+
 ### 3. Le réseau sécurisé (la partie infra)
 
 On simule le réseau interne du vaisseau avec plusieurs machines virtuelles :
@@ -84,14 +95,16 @@ Une représentation physique du sas (porte, cadre) sur laquelle sont fixés les 
 
 ## Scénario de démonstration
 
-1. On montre le fonctionnement normal : un badge autorisé ouvre la porte sans problème
+1. On montre le fonctionnement normal : un badge autorisé ouvre la porte sans problème, et la ligne apparaît sur le dashboard en moins de 3 secondes
 2. On coupe volontairement le lien avec la Terre → le sas continue de fonctionner tout seul
 3. On force la porte sans badge → l'alarme se déclenche immédiatement
 4. On présente un badge autorisé → l'alarme s'arrête
 5. On rétablit le lien avec la Terre → tout se resynchronise sur le dashboard
 
+Variante qui montre bien le mode autonome : débrancher le serveur de bord (ou couper son Wi-Fi) entre les étapes 3 et 4. Le sas continue de réagir exactement pareil, sans le moindre ralentissement ; au retour du réseau, l'intrusion et l'arrêt de l'alarme arrivent d'un coup sur le dashboard, chacun à l'heure où il s'est réellement produit.
+
 ## Pistes d'amélioration pour une future version
 
-- Garder un historique de tous les passages avec la date et l'heure
-- Sécuriser davantage les échanges de données entre le sas et le dashboard
-- Gérer plusieurs sas en même temps sur le même vaisseau
+- Sécuriser davantage les échanges entre le sas et le serveur de bord : aujourd'hui les événements partent en HTTP simple, sans authentification. Du HTTPS et un jeton partagé empêcheraient un appareil branché sur le réseau d'inventer de faux passages.
+- Garder la file d'attente ailleurs qu'en mémoire vive : pour l'instant, une coupure de courant pendant une panne réseau fait perdre les événements non envoyés.
+- Gérer plusieurs sas en même temps sur le même vaisseau. Chaque événement porte déjà le nom de son sas (champ `sas`), il resterait à le montrer sur le dashboard.

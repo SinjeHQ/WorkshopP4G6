@@ -1,3 +1,5 @@
+import { formatHeure } from "../heure";
+
 // Affiche l'état du sas d'après le dernier événement reçu.
 function EtatSas({ dernier }) {
   // Retour anticipé : tant qu'aucun événement n'est arrivé.
@@ -18,8 +20,7 @@ function EtatSas({ dernier }) {
       </p>
       <p className={"niveau niveau-" + dernier.niveau}>{dernier.niveau}</p>
       <p className="etat-message">
-        {dernier.message}, à{" "}
-        {new Date(dernier.heure).toLocaleTimeString("fr-FR")}
+        {dernier.message}, à {formatHeure(dernier.heure)}
       </p>
     </section>
   );

@@ -1,5 +1,8 @@
+import { formatHeure } from "../heure";
+
 // Affiche la liste des événements, déjà triés du plus récent au plus ancien.
-function Historique({ evenements }) {
+// total : combien il y en a en tout, quand la liste affichée est tronquée.
+function Historique({ evenements, total }) {
   return (
     <section className="panneau historique">
       <h2>Historique</h2>
@@ -8,7 +11,7 @@ function Historique({ evenements }) {
         {evenements.map((evenement) => (
           <li key={evenement.id} className="evenement">
             <span className="evenement-heure">
-              {new Date(evenement.heure).toLocaleTimeString("fr-FR")}
+              {formatHeure(evenement.heure)}
             </span>
             <span>{evenement.message}</span>
             <span className={"niveau niveau-" + evenement.niveau}>
@@ -17,6 +20,11 @@ function Historique({ evenements }) {
           </li>
         ))}
       </ul>
+      {total > evenements.length && (
+        <p className="historique-reste">
+          {evenements.length} événements affichés sur {total}.
+        </p>
+      )}
     </section>
   );
 }

@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Adresse de l'API : propre à chaque poste, ne se partage pas
+.env
+.env.*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

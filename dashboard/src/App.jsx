@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import api from "./api";
+import { trierDuPlusRecent } from "./heure";
 import EtatSas from "./components/EtatSas";
 import StatutTerre from "./components/StatutTerre";
 import Historique from "./components/Historique";
@@ -41,11 +42,13 @@ function App() {
     return () => clearInterval(minuteur);
   }, []); // [] : ce bloc ne s'exécute qu'une fois, après le premier affichage.
 
-  // Du plus récent au plus ancien. [...evenements] fait une copie du tableau :
-  // sans elle, sort modifierait le tableau rangé chez React.
-  const evenementsRecents = [...evenements].sort((a, b) => b.id - a.id);
+  // Du plus récent au plus ancien (voir heure.js pour la règle de tri).
+  const evenementsRecents = trierDuPlusRecent(evenements);
   // Le plus récent décide de l'état du sas.
   const dernier = evenementsRecents[0];
+  // Le sas produit un événement à chaque badge : au bout d'une démonstration,
+  // la liste est longue. On n'affiche que les 50 derniers.
+  const evenementsAffiches = evenementsRecents.slice(0, 50);
 
   return (
     <div className="console">
@@ -71,7 +74,10 @@ function App() {
       <main className="grille">
         <EtatSas dernier={dernier} />
         <StatutTerre statut={statut} />
-        <Historique evenements={evenementsRecents} />
+        <Historique
+          evenements={evenementsAffiches}
+          total={evenementsRecents.length}
+        />
         <Reseau appareils={appareils} />
       </main>
     </div>

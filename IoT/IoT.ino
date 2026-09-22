@@ -2,6 +2,8 @@
 #include <MFRC522.h>
 #include <Servo.h>
 
+#include "reseau.h"   // le pont vers le dashboard (voir config.h pour les reglages)
+
 // --- Broches RFID ---
 #define SS_PIN     D8
 #define RST_PIN    D3
@@ -37,6 +39,10 @@ bool accesEnCours       = false;
 bool alarmeActive        = false;
 bool alarmeDejaArretee   = false;
 
+// Dernier etat connu du capteur de porte. Sert aux messages envoyes au
+// dashboard, qui affiche "Verrouillé" ou "Déverrouillé" selon ce champ.
+bool porteFermee = true;
+
 void setup() {
   Serial.begin(115200);
   SPI.begin();
@@ -52,15 +58,24 @@ void setup() {
   digitalWrite(PIN_LED_VERTE, LOW);
   monServo.write(0);
 
+  // Le Wi-Fi se connecte en arriere-plan : le sas est operationnel tout de suite,
+  // meme si le reseau du vaisseau est coupe.
+  reseauDemarrer();
+
   Serial.println("Systeme pret. Approchez un badge...");
+  journaliser("verrouillage", "normal", "ferme", NULL, "Sas verrouillé au démarrage");
 }
 
 void loop() {
   int valeurMagnet = analogRead(PIN_MAGNET);
-  bool porteFermee  = (valeurMagnet < SEUIL_MAGNET);
+  porteFermee       = (valeurMagnet < SEUIL_MAGNET);
   bool porteOuverte = !porteFermee;
 
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+
+    // L'UID en texte (ex : "90E52EA4"), pour l'afficher dans l'historique.
+    char badge[9];
+    uidEnTexte(badge, sizeof(badge));
 
     int index = trouverEquipe();
 
@@ -70,17 +85,17 @@ void loop() {
 
       if (equipes[index].accesAutorise) {
         if (alarmeActive) {
-          arreterAlarme(equipes[index].nom);
+          arreterAlarme(equipes[index].nom, badge);
         } else {
-          accesAutorise(equipes[index].nom);
+          accesAutorise(equipes[index].nom, badge);
         }
       } else {
         Serial.println("Acces refuse pour cette equipe.");
-        accesRefuse();
+        accesRefuse(equipes[index].nom, badge);
       }
     } else {
       Serial.println("Badge inconnu.");
-      accesRefuse();
+      accesRefuse(NULL, badge);
     }
 
     rfid.PICC_HaltA();
@@ -103,6 +118,9 @@ void loop() {
     digitalWrite(PIN_LED_ROUGE, LOW);
     delay(80);
   }
+
+  // Renvoie ce qui n'a pas pu partir plus tot (reseau coupe, serveur eteint...).
+  reseauBoucle();
 }
 
 // --- Cherche si l'UID scanne correspond a une equipe connue ---
@@ -125,9 +143,25 @@ int trouverEquipe() {
   return -1;                             // si aucune des 4 equipes n'a correspondu, on renvoie -1 (badge inconnu)
 }
 
-void accesAutorise(const char* nomEquipe) {
+// --- Transforme l'UID du badge lu en texte hexadecimal, ex : "90E52EA4" ---
+void uidEnTexte(char* sortie, size_t taille) {
+  sortie[0] = '\0';
+
+  for (byte i = 0; i < rfid.uid.size && i < 4; i++) {
+    char octet[3];
+    snprintf(octet, sizeof(octet), "%02X", rfid.uid.uidByte[i]);
+    strncat(sortie, octet, taille - strlen(sortie) - 1);
+  }
+}
+
+void accesAutorise(const char* nomEquipe, const char* badge) {
   Serial.print("Acces autorise pour : ");
   Serial.println(nomEquipe);
+
+  char message[96];
+  snprintf(message, sizeof(message), "Badge %s accepté — %s", badge, nomEquipe);
+  journaliser("badge_accepte", "normal", "ouvert", badge, message);
+
   accesEnCours = true;
   digitalWrite(PIN_LED_VERTE, HIGH);
   bipCourt();
@@ -136,9 +170,20 @@ void accesAutorise(const char* nomEquipe) {
   monServo.write(0);
   accesEnCours = false;
   digitalWrite(PIN_LED_VERTE, LOW);
+
+  journaliser("verrouillage", "normal", "ferme", NULL, "Porte refermée et verrouillée");
 }
 
-void accesRefuse() {
+// nomEquipe vaut NULL quand le badge n'appartient a aucune equipe connue.
+void accesRefuse(const char* nomEquipe, const char* badge) {
+  char message[96];
+  if (nomEquipe != NULL) {
+    snprintf(message, sizeof(message), "Badge %s refusé — %s non autorisée", badge, nomEquipe);
+  } else {
+    snprintf(message, sizeof(message), "Badge %s inconnu, accès refusé", badge);
+  }
+  journaliser("badge_refuse", "doute", porteFermee ? "ferme" : "ouvert", badge, message);
+
   digitalWrite(PIN_LED_ROUGE, HIGH);
   alarmerefuse();
   digitalWrite(PIN_LED_ROUGE, LOW);
@@ -147,15 +192,21 @@ void accesRefuse() {
 void declencherAlarme() {
   Serial.println("ALERTE - porte forcee sans badge ! Badge autorise requis pour arreter.");
   alarmeActive = true;
+  journaliser("intrusion", "critique", "ouvert", NULL, "Porte ouverte sans autorisation");
 }
 
-void arreterAlarme(const char* nomEquipe) {
+void arreterAlarme(const char* nomEquipe, const char* badge) {
   Serial.print("Alarme arretee par : ");
   Serial.println(nomEquipe);
+
   alarmeActive = false;
   alarmeDejaArretee = true;
   digitalWrite(PIN_BUZZER, LOW);
   digitalWrite(PIN_LED_ROUGE, LOW);
+
+  char message[96];
+  snprintf(message, sizeof(message), "Alarme arrêtée par %s (badge %s)", nomEquipe, badge);
+  journaliser("alarme_arretee", "normal", porteFermee ? "ferme" : "ouvert", badge, message);
 }
 
 void bipCourt() {
