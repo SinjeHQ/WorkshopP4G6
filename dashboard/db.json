@@ -1,0 +1,94 @@
+{
+  "evenements": [
+    {
+      "id": 1,
+      "heure": "2026-09-23T14:05:12",
+      "type": "verrouillage",
+      "niveau": "normal",
+      "verrou": "ferme",
+      "badge": null,
+      "message": "Sas verrouillé au démarrage"
+    },
+    {
+      "id": 2,
+      "heure": "2026-09-23T14:12:40",
+      "type": "badge_accepte",
+      "niveau": "normal",
+      "verrou": "ouvert",
+      "badge": "A1B2C3D4",
+      "message": "Badge A1B2C3D4 accepté"
+    },
+    {
+      "id": 3,
+      "heure": "2026-09-23T14:12:46",
+      "type": "passage",
+      "niveau": "normal",
+      "verrou": "ouvert",
+      "badge": null,
+      "message": "Passage confirmé"
+    },
+    {
+      "id": 4,
+      "heure": "2026-09-23T14:12:55",
+      "type": "verrouillage",
+      "niveau": "normal",
+      "verrou": "ferme",
+      "badge": null,
+      "message": "Porte refermée et verrouillée"
+    },
+    {
+      "id": 5,
+      "heure": "2026-09-23T14:20:03",
+      "type": "badge_refuse",
+      "niveau": "doute",
+      "verrou": "ferme",
+      "badge": "FF00AA11",
+      "message": "Badge FF00AA11 refusé"
+    },
+    {
+      "id": 6,
+      "heure": "2026-09-23T14:31:18",
+      "type": "intrusion",
+      "niveau": "critique",
+      "verrou": "ferme",
+      "badge": null,
+      "message": "Porte ouverte sans autorisation"
+    }
+  ],
+  "statut": {
+    "terre": "coupe",
+    "enAttente": 3
+  },
+  "appareils": [
+    {
+      "id": 1,
+      "nom": "Lecteur de badges du sas",
+      "vlan": "securite-physique",
+      "isole": false
+    },
+    {
+      "id": 2,
+      "nom": "Serveur de bord (VM Debian 12)",
+      "vlan": "commandement",
+      "isole": false
+    },
+    {
+      "id": 3,
+      "nom": "Poste de pilotage",
+      "vlan": "commandement",
+      "isole": false
+    },
+    {
+      "id": 4,
+      "nom": "ESP8266 du sas",
+      "vlan": "capteurs",
+      "isole": false
+    },
+    {
+      "id": 5,
+      "nom": "Appareil inconnu",
+      "vlan": "capteurs",
+      "isole": true
+    }
+  ]
+}

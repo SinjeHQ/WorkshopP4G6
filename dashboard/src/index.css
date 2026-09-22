@@ -1,0 +1,248 @@
+/* Couleurs de la console, reprises de l'affiche Sentinel */
+:root {
+  --coque: #0e1a2b;
+  --panneau: #15253b;
+  --trait: #2a3f5c;
+  --texte: #e6edf5;
+  --texte-doux: #93a4ba;
+  --accent: #5cc8f0;
+  --normal: #3dbe7a;
+  --doute: #f2a93b;
+  --critique: #e5484d;
+  --titres: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--coque);
+  color: var(--texte);
+  font-family: "Barlow", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--titres);
+  font-weight: 600;
+}
+
+/* Mise en page générale */
+.console {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.entete {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--trait);
+}
+
+.entete h1 {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.sous-titre,
+.mise-a-jour {
+  margin: 4px 0 0;
+  color: var(--texte-doux);
+}
+
+.alerte-api {
+  margin: 0 0 24px;
+  padding: 12px 16px;
+  border: 1px solid var(--critique);
+  border-radius: 6px;
+  background: rgba(229, 72, 77, 0.12);
+}
+
+.grille {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.panneau {
+  padding: 20px;
+  border: 1px solid var(--trait);
+  border-radius: 6px;
+  background: var(--panneau);
+}
+
+.panneau h2 {
+  margin-bottom: 12px;
+  font-size: 20px;
+  color: var(--texte-doux);
+}
+
+.vide {
+  margin: 0;
+  color: var(--texte-doux);
+}
+
+.liste {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* État du sas : l'élément principal de la console */
+.etat {
+  border-width: 2px;
+}
+
+.etat-normal {
+  border-color: var(--normal);
+}
+
+.etat-doute {
+  border-color: var(--doute);
+}
+
+.etat-critique {
+  border-color: var(--critique);
+}
+
+.etat-verrou {
+  margin: 0;
+  font-family: var(--titres);
+  font-size: 64px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.etat-message {
+  margin: 12px 0 0;
+  color: var(--texte-doux);
+}
+
+/* Niveau d'alerte, repris dans l'état du sas et dans l'historique */
+.niveau {
+  display: inline-block;
+  margin: 12px 0 0;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.niveau-normal {
+  color: var(--normal);
+  background: rgba(61, 190, 122, 0.15);
+}
+
+.niveau-doute {
+  color: var(--doute);
+  background: rgba(242, 169, 59, 0.15);
+}
+
+.niveau-critique {
+  color: var(--critique);
+  background: rgba(229, 72, 77, 0.18);
+}
+
+/* Lien avec la Terre */
+.terre-etat {
+  margin: 0;
+  font-family: var(--titres);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.terre-connecte {
+  color: var(--normal);
+}
+
+.terre-coupe {
+  color: var(--doute);
+}
+
+.terre-attente {
+  margin: 8px 0 0;
+  color: var(--texte-doux);
+}
+
+/* Historique */
+.evenement {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--trait);
+}
+
+.evenement:last-child {
+  border-bottom: none;
+}
+
+.evenement .niveau {
+  margin: 0;
+}
+
+.evenement-heure {
+  color: var(--texte-doux);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Réseau de bord */
+.zone + .zone {
+  margin-top: 16px;
+}
+
+.zone h3 {
+  margin-bottom: 6px;
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.appareil {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.appareil-isole {
+  color: var(--critique);
+}
+
+.isole {
+  padding: 0 8px;
+  border: 1px solid var(--critique);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Sur un petit écran, une seule colonne */
+@media (max-width: 800px) {
+  .grille {
+    grid-template-columns: 1fr;
+  }
+
+  .entete {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .etat-verrou {
+    font-size: 48px;
+  }
+}
