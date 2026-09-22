@@ -1,0 +1,13 @@
+# Identifiants Wi-Fi et adresse du serveur : propres à chaque poste et à chaque
+# réseau, ils ne se partagent pas. Chacun copie IoT/secrets.example.h en
+# IoT/secrets.h et le remplit avec ses valeurs.
+IoT/secrets.h
+
+# Fichiers de build Arduino
+IoT/build/
+*.bin
+*.elf
+
+# Systèmes d'exploitation
+.DS_Store
+Thumbs.db

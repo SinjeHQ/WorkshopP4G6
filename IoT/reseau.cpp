@@ -37,12 +37,18 @@ static unsigned long dernierEssai = 0;
 static unsigned long dernierBattement = 0;
 static int dernierEnAttentePublie = -1;
 
+// Diagnostic Wi-Fi : joue une seule fois, quand la connexion tarde trop.
+static bool diagnosticFait = false;
+static bool scanLance = false;
+
 static const char* MOIS[12] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
 // --- Les petites fonctions internes, déclarées ici pour l'ordre de lecture ---
 static void empiler(const char* type, const char* niveau, const char* verrou,
                     const char* badge, const char* message);
+static bool peutEnvoyer();
+static void diagnostiquerWifi();
 static void viderFile();
 static bool envoyerEvenement(const Evenement& evenement);
 static void publierEtatDuSas();
@@ -58,8 +64,14 @@ static void copier(char* destination, size_t taille, const char* source);
 
 void reseauDemarrer() {
   if (WIFI_SSID[0] == '\0') {
-    Serial.println("Wi-Fi non configure (config.h) : le sas tourne en mode autonome.");
+    Serial.println("Wi-Fi non configure : copier secrets.example.h en secrets.h.");
+    Serial.println("Le sas fonctionne quand meme, en mode autonome.");
     return;
+  }
+
+  if (SERVEUR_HOTE[0] == '\0') {
+    Serial.println("SERVEUR_HOTE vide dans secrets.h : le Wi-Fi va se connecter,");
+    Serial.println("mais rien ne sera envoye au dashboard.");
   }
 
   WiFi.mode(WIFI_STA);
@@ -80,6 +92,11 @@ int reseauEnAttente() {
   return fileTaille;
 }
 
+// Vrai quand on a un serveur a joindre ET une liaison pour le joindre.
+static bool peutEnvoyer() {
+  return SERVEUR_HOTE[0] != '\0' && reseauConnecte();
+}
+
 void journaliser(const char* type, const char* niveau, const char* verrou,
                  const char* badge, const char* message) {
   Serial.print("[");
@@ -98,7 +115,73 @@ void reseauBoucle() {
   if (maintenant - dernierEssai < INTERVALLE_RENVOI_MS) return;
   dernierEssai = maintenant;
 
+  if (!reseauConnecte()) {
+    diagnostiquerWifi();
+    return;
+  }
+
   viderFile();
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostic Wi-Fi
+//
+// Quand la connexion ne vient pas, le moniteur serie reste desesperement muet
+// et on ne sait pas quoi chercher. Au bout de DELAI_DIAGNOSTIC_MS, la carte
+// liste donc une fois les reseaux qu'elle voit.
+//
+// Ce que ca repond, surtout : l'ESP8266 ne capte QUE le 2,4 GHz. Si le reseau
+// cherche n'apparait pas dans la liste alors que le telephone est juste a cote,
+// c'est qu'il diffuse en 5 GHz. Aucun mot de passe n'y changera rien.
+// ---------------------------------------------------------------------------
+static void diagnostiquerWifi() {
+  if (diagnosticFait) return;
+  if (millis() < DELAI_DIAGNOSTIC_MS) return;   // on laisse sa chance a la connexion
+
+  if (!scanLance) {
+    // true = scan en arriere-plan : la boucle du sas n'est pas bloquee.
+    WiFi.scanNetworks(true);
+    scanLance = true;
+    return;
+  }
+
+  int trouves = WiFi.scanComplete();
+  if (trouves == WIFI_SCAN_RUNNING) return;     // pas encore fini, on repassera
+
+  diagnosticFait = true;
+
+  Serial.println();
+  Serial.println("--- Diagnostic Wi-Fi ---");
+  Serial.print("Toujours pas connecte a : ");
+  Serial.println(WIFI_SSID);
+
+  if (trouves <= 0) {
+    Serial.println("La carte ne voit aucun reseau.");
+    Serial.println("Point d'acces eteint, ou trop loin ?");
+  } else {
+    bool vu = false;
+    Serial.println("Reseaux 2,4 GHz visibles par la carte :");
+    for (int i = 0; i < trouves; i++) {
+      Serial.print("  - ");
+      Serial.println(WiFi.SSID(i));
+      if (WiFi.SSID(i) == WIFI_SSID) vu = true;
+    }
+
+    if (vu) {
+      Serial.println("Le reseau est bien visible, donc il est en 2,4 GHz.");
+      Serial.println("C'est le mot de passe qu'il faut verifier (secrets.h).");
+    } else {
+      Serial.println("Le reseau cherche n'est PAS dans cette liste.");
+      Serial.println("La carte ne capte que le 2,4 GHz : le point d'acces est");
+      Serial.println("tres probablement en 5 GHz. Le basculer en 2,4 GHz.");
+      Serial.println("Sur Samsung : Point d'acces mobile > Configurer >");
+      Serial.println("activer \"Compatibilite etendue\".");
+    }
+  }
+
+  WiFi.scanDelete();   // on rend la memoire prise par le scan
+  Serial.println("------------------------");
+  Serial.println();
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +214,7 @@ static void empiler(const char* type, const char* niveau, const char* verrou,
 // Envoie les evenements en attente, du plus ancien au plus recent.
 // Des qu'un envoi echoue, on s'arrete : l'ordre est ainsi toujours respecte.
 static void viderFile() {
-  if (!reseauConnecte()) return;
+  if (!peutEnvoyer()) return;
 
   if (!horlogeConnue) demanderHeureAuServeur();
 
@@ -210,7 +293,7 @@ static bool envoyerEvenement(const Evenement& evenement) {
 // avec la Terre et c'est la passerelle du vaisseau qui les pilote. PATCH ne
 // modifie que les champs envoyes, le reste de la fiche reste intact.
 static void publierEtatDuSas() {
-  if (!reseauConnecte()) return;
+  if (!peutEnvoyer()) return;
 
   unsigned long maintenant = millis();
   bool fileChangee = (fileTaille != dernierEnAttentePublie);

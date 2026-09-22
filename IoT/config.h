@@ -6,25 +6,24 @@
 // sur le réseau du vaisseau : le reste du programme n'a pas besoin d'y toucher.
 // ---------------------------------------------------------------------------
 
-// --- Wi-Fi du bord ---
-// Laisser WIFI_SSID vide ("") pour faire tourner le sas sans réseau du tout :
-// badges, porte et alarme continuent de fonctionner, rien n'est envoyé.
-#define WIFI_SSID     "S25 de Benjamin"
-#define WIFI_PASSWORD "passwords"
+// --- Wi-Fi et adresse du serveur ---
+//
+// Ces trois valeurs ne sont pas ici : elles changent d'un poste et d'un réseau
+// à l'autre, et un mot de passe n'a rien à faire sur GitHub. Elles vivent dans
+// secrets.h, que Git ignore.
+//
+// Au premier clonage du dépôt : copier secrets.example.h en secrets.h et le
+// remplir. Sans ce fichier le programme compile quand même — le sas tourne
+// alors sans réseau, et le dit sur le moniteur série.
+#if __has_include("secrets.h")
+  #include "secrets.h"
+#else
+  #warning "secrets.h absent : copier secrets.example.h en secrets.h (le sas tournera sans reseau)."
+  #define WIFI_SSID     ""
+  #define WIFI_PASSWORD ""
+  #define SERVEUR_HOTE  ""
+#endif
 
-// --- Serveur de bord (la machine qui fait tourner "npm run api") ---
-//
-// >>> LA SEULE VALEUR QUI RESTE A REMPLIR <<<
-//
-// Connecter le PC au partage de connexion, puis relever son adresse :
-//   Windows : ipconfig        -> ligne "Adresse IPv4"
-//   Mac     : ipconfig getifaddr en0
-//   Linux   : hostname -I
-//
-// Surtout pas "localhost" : pour la carte, "localhost" désignerait la carte
-// elle-même. Attention, cette adresse change a chaque fois qu'on passe d'un
-// reseau a un autre.
-#define SERVEUR_HOTE  "A_REMPLIR"
 #define SERVEUR_PORT  3000
 
 // Les deux adresses utilisées par le dashboard.
@@ -45,6 +44,12 @@
 
 // Intervalle entre deux tentatives de vidage de la file, en millisecondes.
 #define INTERVALLE_RENVOI_MS 5000
+
+// Delai avant le diagnostic Wi-Fi, en millisecondes. Passe ce temps sans
+// connexion, la carte liste les reseaux 2,4 GHz qu'elle voit sur le moniteur
+// serie. C'est ce qui permet de savoir si le point d'acces est en 5 GHz : dans
+// ce cas la carte ne le voit tout simplement pas.
+#define DELAI_DIAGNOSTIC_MS 15000
 
 // Intervalle du "battement de coeur", en millisecondes : même quand il ne se
 // passe rien, le sas fait signe au serveur pour que le dashboard sache qu'il

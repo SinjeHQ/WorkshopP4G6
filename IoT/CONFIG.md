@@ -10,12 +10,13 @@
 - Connecter la carte **NodeMCU 1.0 (ESP-12E Module)** au PC avec un câble USB permettant le transfert de données.
 - Ouvrir le fichier `IoT.ino` dans Arduino IDE.
 
-Le programme est réparti sur quatre fichiers, visibles sous forme d'onglets dans Arduino IDE :
+Le programme est réparti sur plusieurs fichiers, visibles sous forme d'onglets dans Arduino IDE :
 
 | Fichier | Rôle |
 |---|---|
 | `IoT.ino` | le sas : badges, porte, alarme |
-| `config.h` | **les réglages** : Wi-Fi et adresse du serveur de bord |
+| `config.h` | les réglages partagés : port, durées, taille de la file |
+| `secrets.h` | **tes identifiants** : Wi-Fi et adresse du serveur. À créer en copiant `secrets.example.h`, ignoré par Git |
 | `reseau.h` / `reseau.cpp` | l'envoi des événements au dashboard |
 
 ## Installer le support ESP8266

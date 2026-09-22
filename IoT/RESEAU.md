@@ -79,7 +79,7 @@ sans réseau.
   maximum, les plus anciens sont sacrifiés au-delà).
 - Dès que la liaison revient, tout part **dans l'ordre**, avec l'heure d'origine :
   rien n'est réécrit à l'heure du retour.
-- Si `WIFI_SSID` est laissé vide dans `config.h`, la carte ne cherche même pas à
+- Si `WIFI_SSID` est laissé vide dans `secrets.h`, la carte ne cherche même pas à
   se connecter. C'est utile pour tester le sas seul.
 
 ## L'heure
@@ -103,14 +103,26 @@ les remet dans le fuseau de celui qui regarde l'écran.
    Surtout pas `localhost` : pour la carte, `localhost` désignerait la carte
    elle-même.
 
-2. **Remplir `config.h`** avec le Wi-Fi du bord et cette adresse :
+2. **Créer son `secrets.h`.** Les identifiants ne sont pas dans le dépôt : un
+   mot de passe n'a rien à faire sur GitHub, et l'adresse du serveur change
+   d'un réseau à l'autre. Copier le modèle, une seule fois :
+
+   ```
+   Windows   copy IoT\secrets.example.h IoT\secrets.h
+   Mac/Linux cp IoT/secrets.example.h IoT/secrets.h
+   ```
+
+   Puis remplir la copie :
 
    ```c
    #define WIFI_SSID     "VaisseauWifi"
    #define WIFI_PASSWORD "motdepasse"
    #define SERVEUR_HOTE  "192.168.1.10"
-   #define SERVEUR_PORT  3000
    ```
+
+   `secrets.h` est ignoré par Git : il reste sur ta machine. Les autres
+   réglages (port, durées, taille de la file) restent dans `config.h`, qui lui
+   est partagé.
 
 3. **Lancer l'API** côté dashboard : `npm run api`. Elle écoute déjà sur toutes
    les interfaces (`--host 0.0.0.0`), sinon la carte ne pourrait pas l'atteindre.
@@ -129,12 +141,52 @@ les remet dans le fuseau de celui qui regarde l'écran.
    « Sas en ligne », et l'événement de démarrage doit apparaître dans
    l'historique.
 
+## 2,4 GHz ou 5 GHz : laisser la carte répondre
+
+L'ESP8266 ne capte **que le 2,4 GHz**. C'est la panne la plus fréquente, et la
+plus pénible à diagnostiquer parce qu'elle ressemble à un mauvais mot de passe.
+
+Pas besoin de deviner : au bout de 15 secondes sans connexion, la carte liste
+elle-même sur le moniteur série les réseaux qu'elle voit. Comme elle est
+physiquement incapable de voir du 5 GHz, cette liste *est* la réponse.
+
+Le réseau cherché n'apparaît pas → il est en 5 GHz :
+
+```
+--- Diagnostic Wi-Fi ---
+Toujours pas connecte a : S25 de Benjamin
+Reseaux 2,4 GHz visibles par la carte :
+  - Livebox-1234
+  - eduroam
+Le reseau cherche n'est PAS dans cette liste.
+La carte ne capte que le 2,4 GHz : le point d'acces est
+tres probablement en 5 GHz. Le basculer en 2,4 GHz.
+```
+
+Le réseau apparaît → la bande est bonne, c'est ailleurs qu'il faut chercher :
+
+```
+Le reseau est bien visible, donc il est en 2,4 GHz.
+C'est le mot de passe qu'il faut verifier (secrets.h).
+```
+
+Pour basculer un partage de connexion en 2,4 GHz : sur **Samsung**, Paramètres
+> Connexions > Point d'accès mobile > Configurer > **Compatibilité étendue** ;
+sur **iPhone**, Réglages > Partage de connexion > **Maximiser la
+compatibilité** ; sur les autres Android, une option **Bande** dans les
+réglages du point d'accès.
+
+Depuis un PC déjà connecté, on peut aussi lire la bande directement :
+`netsh wlan show interfaces` sous Windows affiche le **canal** — de 1 à 14
+c'est du 2,4 GHz, au-delà de 32 c'est du 5 GHz.
+
 ## Si ça ne marche pas
 
 | Ce qu'on voit | Ce qu'il faut regarder |
 |---|---|
-| `Wi-Fi non configure (config.h)` | `WIFI_SSID` est resté vide |
-| Rien après `Connexion au reseau du bord` | SSID ou mot de passe faux ; l'ESP8266 ne capte que le Wi-Fi 2,4 GHz, pas le 5 GHz |
+| `Wi-Fi non configure` | `secrets.h` n'a pas été créé à partir de `secrets.example.h` |
+| `SERVEUR_HOTE vide dans secrets.h` | l'adresse du PC n'a pas été renseignée |
+| Rien après `Connexion au reseau du bord` | attendre 15 secondes : la carte affiche alors son diagnostic Wi-Fi (section précédente) |
 | `Envoi impossible (code -1)` | l'API n'est pas lancée, l'adresse de `SERVEUR_HOTE` est fausse, ou le pare-feu du PC bloque le port 3000 |
 | `Envoi impossible (code 404)` | l'API n'expose pas `/evenements` |
 | Les heures affichent `--:--:--` | la carte n'a encore jamais joint le serveur ; elles se corrigeront au premier échange |

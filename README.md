@@ -53,7 +53,7 @@ Une interface web qui permet de suivre en direct ce qui se passe sur le sas : qu
 
 Aucun des deux n'attend l'autre. Si le réseau tombe, le sas garde ses événements en mémoire et les renvoie tous, dans l'ordre et avec leur heure d'origine, dès que la liaison revient. Et toutes les 30 secondes la carte fait signe, même quand il ne se passe rien : c'est ce qui permet au dashboard d'afficher « Sas en ligne » ou « Sas injoignable ».
 
-Le réglage tient dans un seul fichier, `IoT/config.h` (Wi-Fi du bord et adresse du serveur). La marche à suivre complète est dans [`IoT/RESEAU.md`](IoT/RESEAU.md).
+Le réglage tient dans un seul fichier à créer, `IoT/secrets.h` (Wi-Fi du bord et adresse du serveur), copié depuis `IoT/secrets.example.h` et ignoré par Git. La marche à suivre complète est dans [`IoT/RESEAU.md`](IoT/RESEAU.md).
 
 ### 3. Le réseau sécurisé (la partie infra)
 
