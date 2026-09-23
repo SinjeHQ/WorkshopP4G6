@@ -1,6 +1,7 @@
 import json
 import os
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
@@ -16,8 +17,14 @@ from datetime import datetime
 # Ne jamais ecrire le token dans le code : utiliser les variables
 # d'environnement (ou le fichier .env, deja ignore par git).
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+def lire_variable(nom):
+
+    # Retire espaces, guillemets et \r (fichier .env edite sous Windows).
+    return os.getenv(nom, "").strip().strip("\"'").strip()
+
+
+TELEGRAM_BOT_TOKEN = lire_variable("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = lire_variable("TELEGRAM_CHAT_ID")
 
 API_URL = "https://api.telegram.org/bot{token}/{method}"
 
@@ -49,8 +56,20 @@ def appeler_api(method, params=None):
     if params is not None:
         data = urllib.parse.urlencode(params).encode()
 
-    with urllib.request.urlopen(url, data=data, timeout=10) as reponse:
-        return json.loads(reponse.read().decode())
+    try:
+        with urllib.request.urlopen(url, data=data, timeout=10) as reponse:
+            return json.loads(reponse.read().decode())
+
+    except urllib.error.HTTPError as error:
+        # Telegram explique la cause dans le corps de la reponse.
+        try:
+            detail = json.loads(error.read().decode()).get("description")
+        except Exception:
+            detail = None
+
+        raise RuntimeError(
+            f"HTTP {error.code} - {detail or error.reason}"
+        ) from None
 
 
 def envoyer_message(texte):
