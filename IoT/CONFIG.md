@@ -29,26 +29,3 @@
 5. Ouvrir **Outils > Moniteur série** et sélectionner le débit indiqué dans le code (`Serial.begin(...)`).
 
 Après chaque reconnexion, vérifier que le bon port COM est sélectionné avant de téléverser.
-
-## Envoi des alertes (Wi-Fi + MQTT)
-
-Le sas envoie ses événements au broker Mosquitto de la VM Sentinel, qui les
-transmet au bot Telegram :
-
-| Événement | Topic | Message |
-|---|---|---|
-| Porte forcée sans badge | `sentinel/sas/alarme` | `intrusion` |
-| Alarme arrêtée par badge | `sentinel/sas/alarme` | `arretee:<équipe>` |
-| Badge refusé / inconnu | `sentinel/sas/nfc` | `refuse` |
-
-1. Installer la bibliothèque **PubSubClient** (Nick O'Leary) via
-   **Outils > Gérer les bibliothèques**.
-2. Copier `secrets.h.example` en `secrets.h` (même dossier que `IoT.ino`) et
-   renseigner le Wi-Fi et l'adresse IP de la VM (`ip a` sur la VM).
-   `secrets.h` est ignoré par git.
-3. L'ESP8266 et la VM doivent être sur le même réseau. Si la VM est sous
-   VMware, sa carte réseau doit être en mode **Bridged** (pas NAT).
-4. Le Wi-Fi ne supporte que le **2,4 GHz**.
-
-Le sas fonctionne même sans réseau : une intrusion détectée pendant une
-coupure est envoyée dès le retour de la connexion.

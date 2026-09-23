@@ -26,7 +26,6 @@ MESSAGES = {
     "presence": "Présence détectée devant le sas",
     "autorisation_annulee": "Autorisation annulée",
     "intrusion": "Alarme : intrusion détectée",
-    "alarme_arretee": "Alarme arrêtée par badge autorisé",
 }
 
 
@@ -43,8 +42,6 @@ def traduire_type(event_type, payload):
         return "badge_accepte"
 
     if event_type == "alarme":
-        if payload.startswith("arretee"):
-            return "alarme_arretee"
         return "intrusion"
 
     if event_type == "porte":
