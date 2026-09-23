@@ -1,6 +1,19 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Servo.h>
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+
+// Identifiants Wi-Fi et adresse du broker : voir secrets.h.example
+#include "secrets.h"
+
+// --- Topics MQTT (le listener Python ecoute sentinel/#) ---
+const char* TOPIC_ALARME = "sentinel/sas/alarme";
+const char* TOPIC_NFC    = "sentinel/sas/nfc";
+const char* MQTT_CLIENT_ID = "SAS-A01";
+
+// Entre deux tentatives de reconnexion au broker, pour ne pas bloquer le sas.
+const unsigned long DELAI_RECONNEXION_MS = 5000;
 
 // --- Broches RFID ---
 #define SS_PIN     D8
@@ -30,6 +43,14 @@ const unsigned long STABILITE_MS = 150;
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 Servo monServo;
+
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
+unsigned long derniereTentativeMqtt = 0;
+
+// Une intrusion detectee pendant une coupure reseau est envoyee des le
+// retour de la connexion, pour ne jamais perdre l'alerte.
+bool intrusionAEnvoyer = false;
 
 // --- Structure pour définir une équipe ---
 struct Equipe {
@@ -76,10 +97,18 @@ void setup() {
   digitalWrite(PIN_LED_VERTE, LOW);
   monServo.write(ANGLE_FERME);
 
+  // Le Wi-Fi se connecte en arriere-plan : le sas fonctionne sans attendre.
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+  wifiClient.setTimeout(1000);
+
   Serial.println("Systeme pret. Approchez un badge...");
 }
 
 void loop() {
+  gererMqtt();
+
   bool porteFermee  = lirePorteFermee();
   bool porteOuverte = !porteFermee;
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
@@ -98,10 +127,12 @@ void loop() {
         }
       } else {
         Serial.println("Acces refuse pour cette equipe.");
+        publier(TOPIC_NFC, "refuse");
         accesRefuse();
       }
     } else {
       Serial.println("Badge inconnu.");
+      publier(TOPIC_NFC, "refuse");
       accesRefuse();
     }
 
@@ -233,11 +264,18 @@ void accesRefuse() {
 void declencherAlarme() {
   Serial.println("ALERTE - porte forcee sans badge ! Badge autorise requis pour arreter.");
   alarmeActive = true;
+
+  if (!publier(TOPIC_ALARME, "intrusion")) {
+    intrusionAEnvoyer = true;
+  }
 }
 
 void arreterAlarme(const char* nomEquipe) {
   Serial.print("Alarme arretee par : ");
   Serial.println(nomEquipe);
+
+  String message = String("arretee:") + nomEquipe;
+  publier(TOPIC_ALARME, message.c_str());
   alarmeActive = false;
   alarmeDejaArretee = true;
   digitalWrite(PIN_BUZZER, LOW);
@@ -257,4 +295,47 @@ void alarmerefuse() {
     digitalWrite(PIN_BUZZER, LOW);
     delay(100);
   }
+}
+// --- MQTT ---
+//
+// Le sas doit rester fonctionnel sans reseau : on ne bloque jamais loop()
+// pour attendre le Wi-Fi ou le broker, on retente juste regulierement.
+void gererMqtt() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  if (!mqtt.connected()) {
+    if (millis() - derniereTentativeMqtt < DELAI_RECONNEXION_MS) return;
+    derniereTentativeMqtt = millis();
+
+    Serial.print("Connexion MQTT a ");
+    Serial.print(MQTT_BROKER);
+    Serial.print("... ");
+
+    if (!mqtt.connect(MQTT_CLIENT_ID)) {
+      Serial.print("echec, code ");
+      Serial.println(mqtt.state());
+      return;
+    }
+    Serial.println("OK");
+  }
+
+  mqtt.loop();
+
+  if (intrusionAEnvoyer && publier(TOPIC_ALARME, "intrusion")) {
+    intrusionAEnvoyer = false;
+  }
+}
+
+bool publier(const char* topic, const char* message) {
+  if (!mqtt.connected()) {
+    Serial.println("MQTT non connecte, message non envoye.");
+    return false;
+  }
+
+  bool ok = mqtt.publish(topic, message);
+  Serial.print("MQTT ");
+  Serial.print(topic);
+  Serial.print(" -> ");
+  Serial.println(message);
+  return ok;
 }

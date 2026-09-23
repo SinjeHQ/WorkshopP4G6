@@ -91,25 +91,51 @@ def envoyer_message(texte):
         print(f"[TELEGRAM] Erreur envoi : {error}")
 
 
-def notifier_evenement(device, topic, payload, severity):
+def construire_message(device, topic, payload, severity):
+
+    event_type = topic.split("/")[-1]
+    date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    if event_type == "alarme" and payload.startswith("arretee"):
+        equipe = payload.partition(":")[2] or "badge autorise"
+        return (
+            f"✅ Alarme arretee\n"
+            f"\n"
+            f"Sas : {device}\n"
+            f"Par : {equipe}\n"
+            f"Date : {date}"
+        )
 
     if severity not in TITRES:
+        return None
+
+    if event_type == "alarme":
+        detail = "Porte du sas ouverte sans badge autorise !"
+    elif event_type == "nfc":
+        detail = "Badge refuse ou inconnu presente au lecteur."
+    else:
+        detail = payload
+
+    return (
+        f"{TITRES[severity]}\n"
+        f"\n"
+        f"{detail}\n"
+        f"\n"
+        f"Sas : {device}\n"
+        f"Date : {date}"
+    )
+
+
+def notifier_evenement(device, topic, payload, severity):
+
+    texte = construire_message(device, topic, payload, severity)
+
+    if texte is None:
         return
 
     if not telegram_actif():
         print("[TELEGRAM] Token ou chat_id manquant, notification ignoree")
         return
-
-    date = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-
-    texte = (
-        f"{TITRES[severity]}\n"
-        f"\n"
-        f"Equipement : {device}\n"
-        f"Topic : {topic}\n"
-        f"Message : {payload}\n"
-        f"Date : {date}"
-    )
 
     # Envoi dans un thread pour ne pas bloquer la boucle MQTT
     # si Internet est lent ou indisponible.

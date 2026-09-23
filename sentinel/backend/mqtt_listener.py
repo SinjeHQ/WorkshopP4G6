@@ -36,6 +36,8 @@ def get_severity(topic, payload):
     event_type = topic.split("/")[-1]
 
     if event_type == "alarme":
+        if payload.startswith("arretee"):
+            return "info"
         return "critical"
 
     if event_type == "nfc" and payload == "refuse":
