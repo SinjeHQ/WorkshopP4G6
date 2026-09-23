@@ -1,9 +1,3 @@
-Oui. Le mieux est de mettre tout ça dans un fichier du dépôt du type :
-
-docs/infrastructure.md
-
-Je te prépare ci-dessous une version complète, propre et crédible pour GitHub, avec objectif, technologies, architecture, commandes, scripts, fonctionnement, difficultés rencontrées, solutions, état actuel et évolutions prévues.
-
 SENTINEL — Infrastructure V1
 1. Objectif de l’infrastructure
 
