@@ -1,6 +1,22 @@
 #include <SPI.h>
 #include <MFRC522.h>
 #include <Servo.h>
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+
+// --- Wi-Fi et broker MQTT (A REMPLIR, ne pas committer le vrai mot de passe) ---
+const char* WIFI_SSID     = "NomDuWifi";
+const char* WIFI_PASSWORD = "MotDePasseWifi";
+const char* MQTT_BROKER   = "192.168.1.50";   // IP de la VM Sentinel (commande : ip a)
+const int   MQTT_PORT     = 1883;
+
+// Chaque scan de badge est envoye ici, sous la forme "accepte:<equipe>"
+// ou "refuse:<equipe>". Le listener Python ecoute sentinel/#.
+const char* TOPIC_NFC      = "sentinel/sas/nfc";
+const char* MQTT_CLIENT_ID = "SAS-A01";
+
+// Entre deux tentatives de connexion au broker, pour ne pas bloquer le sas.
+const unsigned long DELAI_RECONNEXION_MS = 5000;
 
 // --- Broches RFID ---
 #define SS_PIN     D8
@@ -30,6 +46,10 @@ const unsigned long STABILITE_MS = 150;
 
 MFRC522 rfid(SS_PIN, RST_PIN);
 Servo monServo;
+
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
+unsigned long derniereTentativeMqtt = 0;
 
 // --- Structure pour définir une équipe ---
 struct Equipe {
@@ -76,10 +96,18 @@ void setup() {
   digitalWrite(PIN_LED_VERTE, LOW);
   monServo.write(ANGLE_FERME);
 
+  // Le Wi-Fi se connecte en arriere-plan : le sas fonctionne sans attendre.
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
+  wifiClient.setTimeout(1000);
+
   Serial.println("Systeme pret. Approchez un badge...");
 }
 
 void loop() {
+  gererMqtt();
+
   bool porteFermee  = lirePorteFermee();
   bool porteOuverte = !porteFermee;
   if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
@@ -91,6 +119,8 @@ void loop() {
       Serial.println(equipes[index].nom);
 
       if (equipes[index].accesAutorise) {
+        publierBadge("accepte", equipes[index].nom);
+
         if (alarmeActive) {
           arreterAlarme(equipes[index].nom);
         } else {
@@ -98,10 +128,12 @@ void loop() {
         }
       } else {
         Serial.println("Acces refuse pour cette equipe.");
+        publierBadge("refuse", equipes[index].nom);
         accesRefuse();
       }
     } else {
       Serial.println("Badge inconnu.");
+      publierBadge("refuse", "Inconnu");
       accesRefuse();
     }
 
@@ -257,4 +289,45 @@ void alarmerefuse() {
     digitalWrite(PIN_BUZZER, LOW);
     delay(100);
   }
+}
+// --- MQTT ---
+//
+// Le sas doit rester fonctionnel sans reseau : on ne bloque jamais loop()
+// pour attendre le Wi-Fi ou le broker, on retente juste regulierement.
+void gererMqtt() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  if (!mqtt.connected()) {
+    if (millis() - derniereTentativeMqtt < DELAI_RECONNEXION_MS) return;
+    derniereTentativeMqtt = millis();
+
+    Serial.print("Connexion MQTT a ");
+    Serial.print(MQTT_BROKER);
+    Serial.print("... ");
+
+    if (!mqtt.connect(MQTT_CLIENT_ID)) {
+      Serial.print("echec, code ");
+      Serial.println(mqtt.state());
+      return;
+    }
+    Serial.println("OK");
+  }
+
+  mqtt.loop();
+}
+
+// Envoie "accepte:Equipe Securite" ou "refuse:Inconnu" sur TOPIC_NFC.
+void publierBadge(const char* resultat, const char* nomEquipe) {
+  if (!mqtt.connected()) {
+    Serial.println("MQTT non connecte, scan non envoye.");
+    return;
+  }
+
+  String message = String(resultat) + ":" + nomEquipe;
+  mqtt.publish(TOPIC_NFC, message.c_str());
+
+  Serial.print("MQTT ");
+  Serial.print(TOPIC_NFC);
+  Serial.print(" -> ");
+  Serial.println(message);
 }

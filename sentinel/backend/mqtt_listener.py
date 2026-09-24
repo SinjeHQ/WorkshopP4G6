@@ -31,6 +31,48 @@ DEVICE_NAME = "SAS-A01"
 # ENREGISTREMENT POSTGRESQL
 # =========================
 
+def connexion_db():
+
+    return psycopg.connect(
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASSWORD
+    )
+
+
+def preparer_table():
+
+    # Colonne du nom de l'equipe qui a scanne son badge (vide sinon).
+    # Ajoutee automatiquement si elle n'existe pas encore.
+    try:
+
+        with connexion_db() as conn:
+            conn.execute(
+                "ALTER TABLE events ADD COLUMN IF NOT EXISTS equipe TEXT"
+            )
+
+        print("[DB] Colonne equipe prete")
+
+    except Exception as error:
+
+        print(f"[DB] Erreur preparation table : {error}")
+
+
+def separer_badge(topic, payload):
+
+    # L'ESP envoie "accepte:Equipe Securite" sur sentinel/.../nfc.
+    # On garde "accepte" dans payload et le nom de l'equipe a part.
+    event_type = topic.split("/")[-1]
+
+    if event_type == "nfc" and ":" in payload:
+        resultat, _, equipe = payload.partition(":")
+        return resultat, equipe
+
+    return payload, None
+
+
 def get_severity(topic, payload):
 
     event_type = topic.split("/")[-1]
@@ -44,34 +86,29 @@ def get_severity(topic, payload):
     return "info"
 
 
-def save_event(topic, payload, severity):
+def save_event(topic, payload, severity, equipe):
 
     event_type = topic.split("/")[-1]
 
     try:
 
-        with psycopg.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            dbname=DB_NAME,
-            user=DB_USER,
-            password=DB_PASSWORD
-        ) as conn:
+        with connexion_db() as conn:
 
             with conn.cursor() as cursor:
 
                 cursor.execute(
                     """
                     INSERT INTO events
-                    (device, topic, event_type, payload, severity)
-                    VALUES (%s, %s, %s, %s, %s)
+                    (device, topic, event_type, payload, severity, equipe)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
                     (
                         DEVICE_NAME,
                         topic,
                         event_type,
                         payload,
-                        severity
+                        severity,
+                        equipe
                     )
                 )
 
@@ -127,18 +164,23 @@ def on_message(
     )
 
     topic = message.topic
-    payload = message.payload.decode()
+    message_brut = message.payload.decode()
+
+    payload, equipe = separer_badge(topic, message_brut)
 
     print("------------------------------")
     print(f"Date    : {date}")
     print(f"Topic   : {topic}")
     print(f"Message : {payload}")
 
+    if equipe:
+        print(f"Equipe  : {equipe}")
+
     severity = get_severity(topic, payload)
 
-    save_event(topic, payload, severity)
+    save_event(topic, payload, severity, equipe)
 
-    notifier_evenement(DEVICE_NAME, topic, payload, severity)
+    notifier_evenement(DEVICE_NAME, topic, message_brut, severity)
 
 
 # =========================
@@ -151,6 +193,8 @@ client = mqtt.Client(
 
 client.on_connect = on_connect
 client.on_message = on_message
+
+preparer_table()
 
 print("Connexion a Mosquitto...")
 
