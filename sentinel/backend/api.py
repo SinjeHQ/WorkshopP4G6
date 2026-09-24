@@ -26,6 +26,7 @@ MESSAGES = {
     "presence": "Présence détectée devant le sas",
     "autorisation_annulee": "Autorisation annulée",
     "intrusion": "Alarme : intrusion détectée",
+    "equipe": "Équipe identifiée",
 }
 
 
@@ -116,7 +117,8 @@ def lire_evenements():
             received_at,
             event_type,
             payload,
-            severity
+            severity,
+            equipe
         FROM events
         ORDER BY id DESC
         LIMIT 50
@@ -125,12 +127,20 @@ def lire_evenements():
 
     fiches = []
 
-    for numero, recu_le, event_type, payload, severity in lignes:
+    for numero, recu_le, event_type, payload, severity, equipe in lignes:
 
         type_dashboard = traduire_type(
             event_type,
             payload
         )
+
+        message = MESSAGES.get(
+            type_dashboard,
+            f"{event_type} : {payload}"
+        )
+
+        if equipe:
+            message = f"{message} - {equipe}"
 
         fiches.append({
 
@@ -154,13 +164,10 @@ def lire_evenements():
                 ),
 
             "badge":
-                None,
+                equipe,
 
             "message":
-                MESSAGES.get(
-                    type_dashboard,
-                    f"{event_type} : {payload}"
-                ),
+                message,
         })
 
     return fiches

@@ -29,3 +29,16 @@
 5. Ouvrir **Outils > Moniteur série** et sélectionner le débit indiqué dans le code (`Serial.begin(...)`).
 
 Après chaque reconnexion, vérifier que le bon port COM est sélectionné avant de téléverser.
+
+## Envoi des scans de badge (Wi-Fi + MQTT)
+
+1. Installer la bibliothèque **PubSubClient** (Nick O'Leary) via
+   **Outils > Gérer les bibliothèques**.
+2. En haut de `IoT.ino`, remplir `WIFI_SSID`, `WIFI_PASSWORD` et
+   `MQTT_SERVER` (adresse IP de la VM Sentinel, `ip a` sur la VM).
+   Ne pas committer le vrai mot de passe Wi-Fi.
+3. L'ESP8266 ne voit que le Wi-Fi **2,4 GHz**, et la VM doit être joignable
+   (carte réseau VMware en mode **Bridged**).
+
+Chaque scan envoie `autorise:<équipe>` ou `refuse:<équipe>`
+(`refuse:Inconnu` pour un badge inconnu) sur `sentinel/sas/A01/nfc`. Sans réseau, le sas continue de fonctionner normalement.

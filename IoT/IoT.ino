@@ -131,6 +131,23 @@ void publierMQTT(const char* topic, const char* message) {
 }
 
 
+// Scan de badge : "autorise:Equipe Securite", "refuse:Inconnu"...
+// Le listener separe le resultat et le nom de l'equipe pour Grafana.
+void publierBadge(
+  const char* resultat,
+  const char* nomEquipe
+) {
+
+  String message =
+    String(resultat) + ":" + nomEquipe;
+
+  publierMQTT(
+    "sentinel/sas/A01/nfc",
+    message.c_str()
+  );
+}
+
+
 // =====================================================
 // WIFI
 // =====================================================
@@ -409,9 +426,9 @@ void loop() {
 
       if (equipes[index].accesAutorise) {
 
-        publierMQTT(
-          "sentinel/sas/A01/nfc",
-          "autorise"
+        publierBadge(
+          "autorise",
+          equipes[index].nom
         );
 
         if (alarmeActive) {
@@ -439,9 +456,9 @@ void loop() {
           "[RFID] Acces refuse"
         );
 
-        publierMQTT(
-          "sentinel/sas/A01/nfc",
-          "refuse"
+        publierBadge(
+          "refuse",
+          equipes[index].nom
         );
 
         accesRefuse();
@@ -459,9 +476,9 @@ void loop() {
         "[RFID] Badge inconnu"
       );
 
-      publierMQTT(
-        "sentinel/sas/A01/nfc",
-        "refuse"
+      publierBadge(
+        "refuse",
+        "Inconnu"
       );
 
       accesRefuse();
