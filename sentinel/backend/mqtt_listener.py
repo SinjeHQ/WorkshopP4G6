@@ -2,8 +2,6 @@ import paho.mqtt.client as mqtt
 import psycopg
 from datetime import datetime
 
-from telegram_notifier import notifier_evenement
-
 
 # =========================
 # CONFIGURATION MQTT
@@ -31,22 +29,17 @@ DEVICE_NAME = "SAS-A01"
 # ENREGISTREMENT POSTGRESQL
 # =========================
 
-def get_severity(topic, payload):
+def save_event(topic, payload):
 
     event_type = topic.split("/")[-1]
+
+    severity = "info"
 
     if event_type == "alarme":
-        return "critical"
+        severity = "critical"
 
-    if event_type == "nfc" and payload == "refuse":
-        return "warning"
-
-    return "info"
-
-
-def save_event(topic, payload, severity):
-
-    event_type = topic.split("/")[-1]
+    elif event_type == "nfc" and payload == "refuse":
+        severity = "warning"
 
     try:
 
@@ -134,11 +127,7 @@ def on_message(
     print(f"Topic   : {topic}")
     print(f"Message : {payload}")
 
-    severity = get_severity(topic, payload)
-
-    save_event(topic, payload, severity)
-
-    notifier_evenement(DEVICE_NAME, topic, payload, severity)
+    save_event(topic, payload)
 
 
 # =========================
