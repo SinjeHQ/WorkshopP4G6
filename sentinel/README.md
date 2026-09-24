@@ -8,7 +8,6 @@ La V1 de l'infrastructure utilise :
 
 - Debian Linux
 - Docker
-- Docker Compose
 - Mosquitto MQTT
 - Python
 - PostgreSQL
@@ -32,6 +31,9 @@ PostgreSQL
    v
 Grafana
 ```
+
+
+<img width="1513" height="757" alt="SENTINEL_Architecture_V3 drawio" src="https://github.com/user-attachments/assets/c140471f-d6b1-40b4-9b26-e571d9b06512" />
 
 ## Notifications Telegram
 
@@ -68,7 +70,7 @@ python mqtt_listener.py          # notifications actives
 Simuler une intrusion :
 
 ```bash
-mosquitto_pub -h 127.0.0.1 -t sentinel/sas/alarme -m intrusion
+mosquitto_pub -h 127.0.0.1 -t sentinel/sas/A01/alarme -m intrusion
 ```
 
 Sans ces variables, le listener fonctionne normalement et ignore les notifications.
@@ -76,8 +78,8 @@ Ne jamais committer le token (le fichier `.env` est déjà ignoré par git).
 
 ## Nom des équipes dans Grafana
 
-À chaque scan, l'ESP8266 envoie sur `sentinel/sas/nfc` un message
-`accepte:<équipe>` ou `refuse:<équipe>` (`refuse:Inconnu` pour un badge
+À chaque scan, l'ESP8266 envoie sur `sentinel/sas/A01/nfc` un message
+`autorise:<équipe>` ou `refuse:<équipe>` (`refuse:Inconnu` pour un badge
 inconnu). Le listener range le résultat dans `payload` et le nom dans la
 colonne `equipe` de la table `events`. Cette colonne est créée
 automatiquement au démarrage du listener.
@@ -88,7 +90,7 @@ Requête pour un panneau **Table** Grafana (source PostgreSQL) :
 SELECT
   received_at AS "Heure",
   equipe      AS "Équipe",
-  CASE payload WHEN 'accepte' THEN 'Accès autorisé' ELSE 'Accès refusé' END AS "Résultat"
+  CASE payload WHEN 'refuse' THEN 'Accès refusé' ELSE 'Accès autorisé' END AS "Résultat"
 FROM events
 WHERE event_type = 'nfc'
 ORDER BY received_at DESC

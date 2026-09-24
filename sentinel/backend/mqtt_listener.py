@@ -62,13 +62,17 @@ def preparer_table():
 
 def separer_badge(topic, payload):
 
-    # L'ESP envoie "accepte:Equipe Securite" sur sentinel/.../nfc.
-    # On garde "accepte" dans payload et le nom de l'equipe a part.
+    # L'ESP envoie "autorise:Equipe Securite" sur sentinel/.../nfc.
+    # On garde "autorise" dans payload et le nom de l'equipe a part.
     event_type = topic.split("/")[-1]
 
     if event_type == "nfc" and ":" in payload:
         resultat, _, equipe = payload.partition(":")
         return resultat, equipe
+
+    # sentinel/.../equipe : le message est directement le nom.
+    if event_type == "equipe":
+        return payload, payload
 
     return payload, None
 

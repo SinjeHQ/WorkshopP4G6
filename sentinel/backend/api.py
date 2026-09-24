@@ -26,6 +26,7 @@ MESSAGES = {
     "presence": "Présence détectée devant le sas",
     "autorisation_annulee": "Autorisation annulée",
     "intrusion": "Alarme : intrusion détectée",
+    "equipe": "Équipe identifiée",
 }
 
 

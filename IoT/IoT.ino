@@ -4,89 +4,281 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 
-// --- Wi-Fi et broker MQTT (A REMPLIR, ne pas committer le vrai mot de passe) ---
-const char* WIFI_SSID     = "NomDuWifi";
-const char* WIFI_PASSWORD = "MotDePasseWifi";
-const char* MQTT_BROKER   = "192.168.1.50";   // IP de la VM Sentinel (commande : ip a)
-const int   MQTT_PORT     = 1883;
+// =====================================================
+// WIFI / MQTT
+// =====================================================
 
-// Chaque scan de badge est envoye ici, sous la forme "accepte:<equipe>"
-// ou "refuse:<equipe>". Le listener Python ecoute sentinel/#.
-const char* TOPIC_NFC      = "sentinel/sas/nfc";
-const char* MQTT_CLIENT_ID = "SAS-A01";
+const char* WIFI_SSID = "S25 de Benjamin";
+const char* WIFI_PASSWORD = "passwords";
 
-// Entre deux tentatives de connexion au broker, pour ne pas bloquer le sas.
-const unsigned long DELAI_RECONNEXION_MS = 5000;
+// METTRE ICI L'IP ACTUELLE DE LA VM DEBIAN
+const char* MQTT_SERVER = "10.240.140.182";
+const int MQTT_PORT = 1883;
 
-// --- Broches RFID ---
-#define SS_PIN     D8
-#define RST_PIN    D3
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
 
-// --- Broches Servo / Buzzer / Capteur magnétique / LED ---
+unsigned long dernierEssaiWifi = 0;
+unsigned long dernierEssaiMQTT = 0;
+
+
+// =====================================================
+// RFID
+// =====================================================
+
+#define SS_PIN  D8
+#define RST_PIN D3
+
+MFRC522 rfid(SS_PIN, RST_PIN);
+
+
+// =====================================================
+// SERVO / BUZZER / CAPTEUR / LED
+// =====================================================
+
 const int PIN_SERVO     = D2;
 const int PIN_BUZZER    = D1;
 const int PIN_MAGNET    = A0;
 const int PIN_LED_ROUGE = D4;
 const int PIN_LED_VERTE = D0;
 
-const int SEUIL_MAGNET = 512; // a ajuster selon ton test
+const int SEUIL_MAGNET = 512;
 
-// --- Positions du servo ---
+
+// =====================================================
+// SERVO
+// =====================================================
+
 const int ANGLE_FERME  = 0;
 const int ANGLE_OUVERT = 80;
 
-// Si personne n'ouvre la porte apres un badge valide, le sas se reverrouille
-// tout seul au bout de ce delai. Sans ca, un badge oublie laisserait le sas
-// ouvert indefiniment.
-const unsigned long DELAI_OUVERTURE_MS = 10000;
-
-// Le capteur magnetique hesite quand la porte bouge : on n'accepte un
-// changement d'etat que s'il se maintient pendant ce temps.
-const unsigned long STABILITE_MS = 150;
-
-MFRC522 rfid(SS_PIN, RST_PIN);
 Servo monServo;
 
-WiFiClient wifiClient;
-PubSubClient mqtt(wifiClient);
-unsigned long derniereTentativeMqtt = 0;
 
-// --- Structure pour définir une équipe ---
+// =====================================================
+// TEMPORISATIONS
+// =====================================================
+
+// Si personne n'ouvre après un badge valide,
+// le sas se reverrouille automatiquement.
+const unsigned long DELAI_OUVERTURE_MS = 10000;
+
+// Filtrage du capteur magnétique
+const unsigned long STABILITE_MS = 150;
+
+
+// =====================================================
+// EQUIPES
+// =====================================================
+
 struct Equipe {
   const char* nom;
   byte uid[4];
   bool accesAutorise;
 };
 
-// --- Liste des 4 équipes (REMPLACE les UID par ceux de tes vrais badges) ---
 Equipe equipes[4] = {
-  {"Equipe Securite",     {0x90, 0xE5, 0x2E, 0xA4}, true},   // acces OK
-  {"Equipe Medicale",     {0x6B, 0xB0, 0xF1, 0xAE}, true},   // acces OK - a remplacer
-  {"Equipe Energetique",  {0x5B, 0xDB, 0x75, 0xBD}, false},  // acces refuse - a remplacer
-  {"Equipe Alimentaire",  {0x2E, 0x45, 0xC9, 0x49}, false}   // acces refuse - a remplacer
+  {"Equipe Securite",    {0x90, 0xE5, 0x2E, 0xA4}, true},
+  {"Equipe Medicale",    {0x6B, 0xB0, 0xF1, 0xAE}, true},
+  {"Equipe Energetique", {0x5B, 0xDB, 0x75, 0xBD}, false},
+  {"Equipe Alimentaire", {0x2E, 0x45, 0xC9, 0x49}, false}
 };
 
-// --- Ou en est le sas ---
-//
-// REPOS            : porte verrouillee, rien en cours.
-// DEVERROUILLE     : badge accepte, le servo a libere la porte. On attend
-//                    que quelqu'un l'ouvre vraiment.
-// PASSAGE_EN_COURS : la porte est ouverte. On attend qu'elle se referme
-//                    pour reverrouiller.
-enum EtatAcces { REPOS, DEVERROUILLE, PASSAGE_EN_COURS };
+
+// =====================================================
+// ETAT DU SAS
+// =====================================================
+
+enum EtatAcces {
+  REPOS,
+  DEVERROUILLE,
+  PASSAGE_EN_COURS
+};
 
 EtatAcces etatAcces = REPOS;
+
 unsigned long debutAcces = 0;
 
-bool alarmeActive      = false;
+bool alarmeActive = false;
 bool alarmeDejaArretee = false;
 
+
+// =====================================================
+// ETAT DE PORTE POUR MQTT
+// =====================================================
+
+bool premierEtatPorte = true;
+bool ancienEtatPorteFermee = true;
+
+
+// =====================================================
+// MQTT
+// =====================================================
+
+void publierMQTT(const char* topic, const char* message) {
+
+  // Le fonctionnement local du sas continue même si MQTT tombe
+  if (!mqttClient.connected()) {
+    return;
+  }
+
+  mqttClient.publish(topic, message);
+
+  Serial.print("[MQTT] ");
+  Serial.print(topic);
+  Serial.print(" -> ");
+  Serial.println(message);
+}
+
+
+// Scan de badge : "autorise:Equipe Securite", "refuse:Inconnu"...
+// Le listener separe le resultat et le nom de l'equipe pour Grafana.
+void publierBadge(
+  const char* resultat,
+  const char* nomEquipe
+) {
+
+  String message =
+    String(resultat) + ":" + nomEquipe;
+
+  publierMQTT(
+    "sentinel/sas/A01/nfc",
+    message.c_str()
+  );
+}
+
+
+// =====================================================
+// WIFI
+// =====================================================
+
+void maintenirWifi() {
+
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  // Nouvelle tentative toutes les 5 secondes
+  if (millis() - dernierEssaiWifi < 5000) {
+    return;
+  }
+
+  dernierEssaiWifi = millis();
+
+  Serial.println("[WIFI] Tentative de reconnexion...");
+
+  WiFi.begin(
+    WIFI_SSID,
+    WIFI_PASSWORD
+  );
+}
+
+
+// =====================================================
+// CONNEXION MQTT
+// =====================================================
+
+void maintenirMQTT() {
+
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  if (mqttClient.connected()) {
+    mqttClient.loop();
+    return;
+  }
+
+  // Nouvelle tentative toutes les 5 secondes
+  if (millis() - dernierEssaiMQTT < 5000) {
+    return;
+  }
+
+  dernierEssaiMQTT = millis();
+
+  Serial.print("[MQTT] Connexion vers ");
+  Serial.print(MQTT_SERVER);
+  Serial.print(":");
+  Serial.println(MQTT_PORT);
+
+  // Last Will :
+  // si l'ESP disparaît brutalement, Mosquitto publie "offline"
+  bool connexionOK = mqttClient.connect(
+    "ESP8266-SAS-A01",
+
+    "sentinel/sas/A01/status",
+    0,
+    true,
+    "offline"
+  );
+
+  if (connexionOK) {
+
+    Serial.println("[MQTT] Connecte a Mosquitto");
+
+    // Etat online retenu par Mosquitto
+    mqttClient.publish(
+      "sentinel/sas/A01/status",
+      "online",
+      true
+    );
+
+    // Envoie immédiatement l'état réel de la porte
+    bool porteFermee = lirePorteFermee();
+
+    if (porteFermee) {
+
+      mqttClient.publish(
+        "sentinel/sas/A01/porte",
+        "fermee"
+      );
+
+    } else {
+
+      mqttClient.publish(
+        "sentinel/sas/A01/porte",
+        "ouverte"
+      );
+    }
+
+  } else {
+
+    Serial.print("[MQTT] Echec connexion. Code : ");
+    Serial.println(mqttClient.state());
+  }
+}
+
+
+// =====================================================
+// SETUP
+// =====================================================
+
 void setup() {
+
   Serial.begin(115200);
+
+  delay(500);
+
+  Serial.println();
+  Serial.println("===============================");
+  Serial.println("       SENTINEL - SAS A01");
+  Serial.println("===============================");
+
+
+  // RFID
   SPI.begin();
   rfid.PCD_Init();
 
-  monServo.attach(PIN_SERVO, 500, 2450);
+
+  // Servo
+  monServo.attach(
+    PIN_SERVO,
+    500,
+    2450
+  );
+
+
+  // Sorties
   pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_LED_ROUGE, OUTPUT);
   pinMode(PIN_LED_VERTE, OUTPUT);
@@ -94,240 +286,611 @@ void setup() {
   digitalWrite(PIN_BUZZER, LOW);
   digitalWrite(PIN_LED_ROUGE, LOW);
   digitalWrite(PIN_LED_VERTE, LOW);
+
   monServo.write(ANGLE_FERME);
 
-  // Le Wi-Fi se connecte en arriere-plan : le sas fonctionne sans attendre.
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-  wifiClient.setTimeout(1000);
 
-  Serial.println("Systeme pret. Approchez un badge...");
+  // ===================================================
+  // WIFI
+  // ===================================================
+
+  WiFi.mode(WIFI_STA);
+
+  WiFi.begin(
+    WIFI_SSID,
+    WIFI_PASSWORD
+  );
+
+
+  // ===================================================
+  // MQTT
+  // ===================================================
+
+  mqttClient.setServer(
+    MQTT_SERVER,
+    MQTT_PORT
+  );
+
+  mqttClient.setKeepAlive(30);
+
+
+  Serial.println("[LOCAL] Systeme du SAS operationnel");
+  Serial.println("[WIFI] Connexion en cours...");
+  Serial.println("Approchez un badge...");
 }
 
-void loop() {
-  gererMqtt();
 
-  bool porteFermee  = lirePorteFermee();
+// =====================================================
+// LOOP
+// =====================================================
+
+void loop() {
+
+  // ===================================================
+  // RESEAU
+  // ===================================================
+
+  maintenirWifi();
+  maintenirMQTT();
+
+
+  // Affichage IP ESP une seule fois après connexion
+  static bool wifiAnnonce = false;
+
+  if (
+    WiFi.status() == WL_CONNECTED &&
+    !wifiAnnonce
+  ) {
+
+    wifiAnnonce = true;
+
+    Serial.println("[WIFI] Connecte");
+
+    Serial.print("[WIFI] IP de l'ESP : ");
+    Serial.println(WiFi.localIP());
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    wifiAnnonce = false;
+  }
+
+
+  // ===================================================
+  // CAPTEUR MAGNETIQUE
+  // ===================================================
+
+  bool porteFermee = lirePorteFermee();
   bool porteOuverte = !porteFermee;
-  if (rfid.PICC_IsNewCardPresent() && rfid.PICC_ReadCardSerial()) {
+
+
+  // ===================================================
+  // ENVOI ETAT PORTE MQTT
+  // ===================================================
+
+  if (premierEtatPorte) {
+
+    ancienEtatPorteFermee = porteFermee;
+    premierEtatPorte = false;
+
+  }
+
+  else if (
+    porteFermee != ancienEtatPorteFermee
+  ) {
+
+    ancienEtatPorteFermee = porteFermee;
+
+    if (porteFermee) {
+
+      Serial.println("[PORTE] Fermee");
+
+      publierMQTT(
+        "sentinel/sas/A01/porte",
+        "fermee"
+      );
+
+    } else {
+
+      Serial.println("[PORTE] Ouverte");
+
+      publierMQTT(
+        "sentinel/sas/A01/porte",
+        "ouverte"
+      );
+    }
+  }
+
+
+  // ===================================================
+  // RFID
+  // ===================================================
+
+  if (
+    rfid.PICC_IsNewCardPresent() &&
+    rfid.PICC_ReadCardSerial()
+  ) {
 
     int index = trouverEquipe();
 
+
+    // Badge connu
     if (index != -1) {
-      Serial.print("Badge reconnu : ");
+
+      Serial.print("[RFID] Badge reconnu : ");
       Serial.println(equipes[index].nom);
 
+
+      // =================================================
+      // BADGE AUTORISE
+      // =================================================
+
       if (equipes[index].accesAutorise) {
-        publierBadge("accepte", equipes[index].nom);
+
+        publierBadge(
+          "autorise",
+          equipes[index].nom
+        );
 
         if (alarmeActive) {
-          arreterAlarme(equipes[index].nom);
+
+          arreterAlarme(
+            equipes[index].nom
+          );
+
         } else {
-          accesAutorise(equipes[index].nom);
+
+          accesAutorise(
+            equipes[index].nom
+          );
         }
-      } else {
-        Serial.println("Acces refuse pour cette equipe.");
-        publierBadge("refuse", equipes[index].nom);
+      }
+
+
+      // =================================================
+      // BADGE REFUSE
+      // =================================================
+
+      else {
+
+        Serial.println(
+          "[RFID] Acces refuse"
+        );
+
+        publierBadge(
+          "refuse",
+          equipes[index].nom
+        );
+
         accesRefuse();
       }
-    } else {
-      Serial.println("Badge inconnu.");
-      publierBadge("refuse", "Inconnu");
+    }
+
+
+    // ===================================================
+    // BADGE INCONNU
+    // ===================================================
+
+    else {
+
+      Serial.println(
+        "[RFID] Badge inconnu"
+      );
+
+      publierBadge(
+        "refuse",
+        "Inconnu"
+      );
+
       accesRefuse();
     }
+
 
     rfid.PICC_HaltA();
     rfid.PCD_StopCrypto1();
   }
 
-  // Fait avancer le passage en cours : ouverture, puis refermeture.
+
+  // ===================================================
+  // GESTION PASSAGE
+  // ===================================================
+
   gererAcces(porteFermee);
+
+
+  // ===================================================
+  // RESET ALARME
+  // ===================================================
 
   if (porteFermee) {
     alarmeDejaArretee = false;
   }
 
-  // Porte ouverte alors qu'aucun passage n'est autorise : intrusion.
-  if (porteOuverte && etatAcces == REPOS && !alarmeActive && !alarmeDejaArretee) {
+
+  // ===================================================
+  // DETECTION INTRUSION
+  // ===================================================
+
+  if (
+    porteOuverte &&
+    etatAcces == REPOS &&
+    !alarmeActive &&
+    !alarmeDejaArretee
+  ) {
+
     declencherAlarme();
   }
 
+
+  // ===================================================
+  // ALARME ACTIVE
+  // ===================================================
+
   if (alarmeActive) {
-    digitalWrite(PIN_BUZZER, HIGH);
-    digitalWrite(PIN_LED_ROUGE, HIGH);
+
+    digitalWrite(
+      PIN_BUZZER,
+      HIGH
+    );
+
+    digitalWrite(
+      PIN_LED_ROUGE,
+      HIGH
+    );
+
     delay(80);
-    digitalWrite(PIN_BUZZER, LOW);
-    digitalWrite(PIN_LED_ROUGE, LOW);
+
+    digitalWrite(
+      PIN_BUZZER,
+      LOW
+    );
+
+    digitalWrite(
+      PIN_LED_ROUGE,
+      LOW
+    );
+
     delay(80);
   }
 }
 
-// --- Lit le capteur magnetique, en ignorant les hesitations ---
-//
-// Quand la porte bouge, la valeur passe plusieurs fois de part et d'autre du
-// seuil. Sans ce filtre, un rebond d'une milliseconde pendant l'ouverture
-// ferait croire que la porte s'est deja refermee, et le servo se verrouillerait
-// alors que la porte est encore ouverte.
-bool lirePorteFermee() {
-  static bool etatStable    = true;   // au demarrage, on suppose la porte fermee
-  static bool dernierBrut   = true;
-  static unsigned long vuA  = 0;
 
-  bool brut = (analogRead(PIN_MAGNET) < SEUIL_MAGNET);
+// =====================================================
+// CAPTEUR MAGNETIQUE FILTRE
+// =====================================================
+
+bool lirePorteFermee() {
+
+  static bool etatStable = true;
+  static bool dernierBrut = true;
+  static unsigned long vuA = 0;
+
+  bool brut = (
+    analogRead(PIN_MAGNET) <
+    SEUIL_MAGNET
+  );
+
 
   if (brut != dernierBrut) {
-    // La valeur vient de changer : on demarre le chronometre.
+
     dernierBrut = brut;
+
     vuA = millis();
+
   }
-  else if (brut != etatStable && millis() - vuA >= STABILITE_MS) {
-    // Elle tient depuis assez longtemps : on accepte le changement.
+
+  else if (
+    brut != etatStable &&
+    millis() - vuA >= STABILITE_MS
+  ) {
+
     etatStable = brut;
   }
 
   return etatStable;
 }
 
-// --- Le deroulement d'un passage autorise ---
+
+// =====================================================
+// GESTION PASSAGE AUTORISE
+// =====================================================
+
 void gererAcces(bool porteFermee) {
-  if (etatAcces == REPOS) return;
 
-  if (etatAcces == DEVERROUILLE) {
-    if (!porteFermee) {
-      // La porte vient de s'ouvrir : on attend maintenant sa refermeture.
-      Serial.println("Porte ouverte, passage en cours...");
-      etatAcces = PASSAGE_EN_COURS;
-      return;
-    }
-
-    // Personne n'a ouvert : on reverrouille pour ne pas laisser le sas libre.
-    if (millis() - debutAcces >= DELAI_OUVERTURE_MS) {
-      verrouiller("personne n'est passe");
-    }
+  if (etatAcces == REPOS) {
     return;
   }
 
-  // PASSAGE_EN_COURS : c'est la refermeture de la porte qui verrouille.
-  if (porteFermee) {
-    verrouiller("porte refermee");
+
+  // ===================================================
+  // PORTE DEVERROUILLEE
+  // ===================================================
+
+  if (etatAcces == DEVERROUILLE) {
+
+    // La personne vient d'ouvrir
+    if (!porteFermee) {
+
+      Serial.println(
+        "[ACCES] Porte ouverte, passage en cours..."
+      );
+
+      etatAcces = PASSAGE_EN_COURS;
+
+      return;
+    }
+
+
+    // Personne n'a ouvert après 10 secondes
+    if (
+      millis() - debutAcces >=
+      DELAI_OUVERTURE_MS
+    ) {
+
+      verrouiller(
+        "personne n'est passe"
+      );
+    }
+
+    return;
+  }
+
+
+  // ===================================================
+  // PASSAGE EN COURS
+  // ===================================================
+
+  if (
+    etatAcces == PASSAGE_EN_COURS &&
+    porteFermee
+  ) {
+
+    verrouiller(
+      "porte refermee"
+    );
   }
 }
 
-void verrouiller(const char* raison) {
-  monServo.write(ANGLE_FERME);
-  digitalWrite(PIN_LED_VERTE, LOW);
+
+// =====================================================
+// VERROUILLAGE
+// =====================================================
+
+void verrouiller(
+  const char* raison
+) {
+
+  monServo.write(
+    ANGLE_FERME
+  );
+
+  digitalWrite(
+    PIN_LED_VERTE,
+    LOW
+  );
+
   etatAcces = REPOS;
 
-  Serial.print("Sas verrouille : ");
-  Serial.println(raison);
+  Serial.print(
+    "[ACCES] Sas verrouille : "
+  );
+
+  Serial.println(
+    raison
+  );
 }
 
-// --- Cherche si l'UID scanne correspond a une equipe connue ---
+
+// =====================================================
+// RECHERCHE EQUIPE
+// =====================================================
+
 int trouverEquipe() {
-  if (rfid.uid.size != 4) return -1;
+
+  if (rfid.uid.size != 4) {
+    return -1;
+  }
 
   for (int e = 0; e < 4; e++) {
+
     bool correspond = true;
 
-    for (byte i = 0; i < 4; i++) {
-      if (rfid.uid.uidByte[i] != equipes[e].uid[i]) {
+    for (
+      byte i = 0;
+      i < 4;
+      i++
+    ) {
+
+      if (
+        rfid.uid.uidByte[i] !=
+        equipes[e].uid[i]
+      ) {
+
         correspond = false;
+
         break;
       }
     }
 
-    if (correspond) return e;
+    if (correspond) {
+      return e;
+    }
   }
 
   return -1;
 }
 
-// Libere la porte, sans attendre : c'est loop() qui suivra la suite.
-void accesAutorise(const char* nomEquipe) {
-  Serial.print("Acces autorise pour : ");
-  Serial.println(nomEquipe);
 
-  digitalWrite(PIN_LED_VERTE, HIGH);
+// =====================================================
+// ACCES AUTORISE
+// =====================================================
+
+void accesAutorise(
+  const char* nomEquipe
+) {
+
+  Serial.print(
+    "[ACCES] Autorise pour : "
+  );
+
+  Serial.println(
+    nomEquipe
+  );
+
+
+  // MQTT
+  // Utile pour identifier l'équipe dans Grafana
+  publierMQTT(
+    "sentinel/sas/A01/equipe",
+    nomEquipe
+  );
+
+
+  digitalWrite(
+    PIN_LED_VERTE,
+    HIGH
+  );
+
   bipCourt();
-  monServo.write(ANGLE_OUVERT);
 
-  etatAcces  = DEVERROUILLE;
+  monServo.write(
+    ANGLE_OUVERT
+  );
+
+
+  // IMPORTANT :
+  // aucun delay(3000) ici.
+  // Le programme continue à gérer MQTT et le capteur.
+  etatAcces = DEVERROUILLE;
+
   debutAcces = millis();
 }
 
+
+// =====================================================
+// ACCES REFUSE
+// =====================================================
+
 void accesRefuse() {
-  digitalWrite(PIN_LED_ROUGE, HIGH);
+
+  digitalWrite(
+    PIN_LED_ROUGE,
+    HIGH
+  );
+
   alarmerefuse();
-  digitalWrite(PIN_LED_ROUGE, LOW);
+
+  digitalWrite(
+    PIN_LED_ROUGE,
+    LOW
+  );
 }
+
+
+// =====================================================
+// DECLENCHEMENT ALARME
+// =====================================================
 
 void declencherAlarme() {
-  Serial.println("ALERTE - porte forcee sans badge ! Badge autorise requis pour arreter.");
+
+  Serial.println(
+    "[ALARME] Porte forcee sans badge !"
+  );
+
   alarmeActive = true;
+
+
+  // MQTT -> listener -> PostgreSQL -> Grafana + Telegram
+  publierMQTT(
+    "sentinel/sas/A01/alarme",
+    "intrusion"
+  );
 }
 
-void arreterAlarme(const char* nomEquipe) {
-  Serial.print("Alarme arretee par : ");
-  Serial.println(nomEquipe);
+
+// =====================================================
+// ARRET ALARME
+// =====================================================
+
+void arreterAlarme(
+  const char* nomEquipe
+) {
+
+  Serial.print(
+    "[ALARME] Arretee par : "
+  );
+
+  Serial.println(
+    nomEquipe
+  );
+
   alarmeActive = false;
+
   alarmeDejaArretee = true;
-  digitalWrite(PIN_BUZZER, LOW);
-  digitalWrite(PIN_LED_ROUGE, LOW);
+
+  digitalWrite(
+    PIN_BUZZER,
+    LOW
+  );
+
+  digitalWrite(
+    PIN_LED_ROUGE,
+    LOW
+  );
+
+
+  // Information supplémentaire pour la supervision
+  publierMQTT(
+    "sentinel/sas/A01/alarme_etat",
+    "inactive"
+  );
+
+  publierMQTT(
+    "sentinel/sas/A01/equipe",
+    nomEquipe
+  );
 }
+
+
+// =====================================================
+// BIP COURT
+// =====================================================
 
 void bipCourt() {
-  digitalWrite(PIN_BUZZER, HIGH);
+
+  digitalWrite(
+    PIN_BUZZER,
+    HIGH
+  );
+
   delay(150);
-  digitalWrite(PIN_BUZZER, LOW);
+
+  digitalWrite(
+    PIN_BUZZER,
+    LOW
+  );
 }
+
+
+// =====================================================
+// ALARME ACCES REFUSE
+// =====================================================
 
 void alarmerefuse() {
+
   for (int i = 0; i < 2; i++) {
-    digitalWrite(PIN_BUZZER, HIGH);
+
+    digitalWrite(
+      PIN_BUZZER,
+      HIGH
+    );
+
     delay(100);
-    digitalWrite(PIN_BUZZER, LOW);
+
+    digitalWrite(
+      PIN_BUZZER,
+      LOW
+    );
+
     delay(100);
   }
-}
-// --- MQTT ---
-//
-// Le sas doit rester fonctionnel sans reseau : on ne bloque jamais loop()
-// pour attendre le Wi-Fi ou le broker, on retente juste regulierement.
-void gererMqtt() {
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  if (!mqtt.connected()) {
-    if (millis() - derniereTentativeMqtt < DELAI_RECONNEXION_MS) return;
-    derniereTentativeMqtt = millis();
-
-    Serial.print("Connexion MQTT a ");
-    Serial.print(MQTT_BROKER);
-    Serial.print("... ");
-
-    if (!mqtt.connect(MQTT_CLIENT_ID)) {
-      Serial.print("echec, code ");
-      Serial.println(mqtt.state());
-      return;
-    }
-    Serial.println("OK");
-  }
-
-  mqtt.loop();
-}
-
-// Envoie "accepte:Equipe Securite" ou "refuse:Inconnu" sur TOPIC_NFC.
-void publierBadge(const char* resultat, const char* nomEquipe) {
-  if (!mqtt.connected()) {
-    Serial.println("MQTT non connecte, scan non envoye.");
-    return;
-  }
-
-  String message = String(resultat) + ":" + nomEquipe;
-  mqtt.publish(TOPIC_NFC, message.c_str());
-
-  Serial.print("MQTT ");
-  Serial.print(TOPIC_NFC);
-  Serial.print(" -> ");
-  Serial.println(message);
 }
