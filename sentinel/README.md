@@ -8,7 +8,6 @@ La V1 de l'infrastructure utilise :
 
 - Debian Linux
 - Docker
-- Docker Compose
 - Mosquitto MQTT
 - Python
 - PostgreSQL
